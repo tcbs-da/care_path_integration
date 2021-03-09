@@ -1,4 +1,4 @@
-# care_path_integration
+# Care_Path_Integration
 
 # Basic Logic:
 ## 1. Clean and reform raw EMR data by features, "Key", "ID", "Diag", "Treatment", "Office", into sensible first-visit dataset and subsequent-visit datasets 
