@@ -1,4 +1,7 @@
 import pandas as pd
+import numpy as np
+import multiprocessing
+
 # from zipfile import ZipFile
 
 import warnings
@@ -7,9 +10,10 @@ warnings.filterwarnings("ignore","DeprecationWarning")
 
 class care_pathway(object):
 
-    def __init__(self,df):
+    def __init__(self,df, proc_num):
 
         self.df = df
+        self.proc_num = proc_num
 
 
     def later_to_first(self, ori_first, add_later):
@@ -207,8 +211,8 @@ class care_pathway(object):
 
 
 
-    def clean1(self):
-        data = self.df.copy().reset_index(drop=True)
+    def clean1(self,dt):
+        data = dt.copy().reset_index(drop=True)
         data.drop(['Unnamed: 0'],axis = 1,inplace=True)
         data[["诊断名称",'治疗计划','消费项目']] = data[["诊断名称",'治疗计划','消费项目']].astype(str)
         #经过专家确认，单独出现的“同期”为手误输入的“同前”，可将其与同前一起纳为“Unknown”
@@ -315,8 +319,88 @@ class care_pathway(object):
         return final_out
 
 
-    def start_link(self):
-        fl = self.reform_and_refill(self.clean1())
+    def start_link(self,p,dt):
+        print('Process {} run in'.format(p))
+        fl = self.reform_and_refill(self.clean1(dt))
         output = self.link_first_laters(fl[0], self.split_later(fl[1]))
+        print('Process {} run out'.format(p))
 
         return output
+
+# 多线程任务
+# step1：分包
+    def bag_of_pats(self): # retrieved from file ‘Dataprep.py’
+        """
+        将所有已种植客户的数据按照患者id进行分包处理，患者的所有病程数据会被完整保留，不会被截断
+        bag_num: 将总数据集分为几个包
+        pats_id: 该数据集的所有患者id
+        pats_data: 总数据集
+        """
+        pats_data = self.df.copy()
+        pats_id = list(self.df[['关联键','证件号（id）']].value_counts().index)
+
+
+        sub_num = self.proc_num
+        size_list = [round(i) for i in np.linspace(0, len(pats_id) - 1, sub_num + 1)]
+        count = 1
+        name = locals()
+
+        for i in range(1, len(size_list)):  # 1,2,3,4
+
+            if count == 1:
+                name["sub_pat{}".format(count)] = pats_id[size_list[i - 1]:size_list[i] + 1]
+                id_l = []
+
+                for x in locals()["sub_pat{}".format(i)]:
+                    idx = pats_data[(pats_data['关联键'].values == x[0])&(pats_data['证件号（id）'].values == x[1])].index.tolist()
+                    id_l += idx
+
+                #temp_sub = pats_data[pats_data['关联键'].isin([x[0] for x in locals()["sub_pat{}".format(i)]])]
+                name["sub_imp{}".format(count)] = pats_data.loc[id_l,:] # temp_sub[temp_sub['证件号（id）'].isin([x[1] for x in locals()["sub_pat{}".format(i)]])]
+
+            else:
+                name["sub_pat{}".format(count)] = pats_id[size_list[i - 1] + 1:size_list[i] + 1]
+                id_l = []
+
+                for x in locals()["sub_pat{}".format(i)]:
+                    idx = pats_data[(pats_data['关联键'].values == x[0]) & (pats_data['证件号（id）'].values == x[1])].index.tolist()
+                    id_l += idx
+
+                #temp_sub = pats_data[pats_data['关联键'].isin([x[0] for x in locals()["sub_pat{}".format(i)]])]
+                name["sub_imp{}".format(count)] = pats_data.loc[id_l,:] # temp_sub[temp_sub['证件号（id）'].isin([x[1] for x in locals()["sub_pat{}".format(i)]])]
+
+
+            count += 1
+
+        # 分包后打包进元组方便遍历
+        imp_list = []
+        # pat_list = []
+        for o in range(1, len(size_list)):
+            # pat_list.append(locals()["sub_pat{}".format(o)])
+            imp_list.append(locals()["sub_imp{}".format(o)])
+
+        print("分包完毕，得到的两类数据为sub_pat()和sub_imp()分别表示分包后的患者id集和对应患者病程数据，括号以子集编号代替，如sub_pat1")
+        return imp_list
+
+
+
+# step2: 多线程
+    def pathway_link(self):
+
+        sub_bags = self.bag_of_pats()
+        result = []
+
+        pool = multiprocessing.Pool()
+        for p in range(len(sub_bags)):
+            result.append(pool.apply_async(self.start_link, (p, sub_bags[p],)))
+
+        pool.close()
+        pool.join()  # 调用join之前，先调用close函数，否则会出错。执行完close后不会有新的进程加入到pool,join函数等待所有子进程结束
+
+        print("主进程终止")
+        sub_list = [i.get() for i in result]
+        final_out = pd.DataFrame()
+        for i in sub_list:
+            final_out = final_out.append(i)
+
+        return final_out
