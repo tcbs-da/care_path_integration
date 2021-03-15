@@ -6,6 +6,5 @@
 ## 3. Join consistent first and subsequent datasets by features, "Key", "ID", "Diag", "Treatment", "Office"
 
 # Instruction:
-### import care_pathway_integration as cpi
-### cpi.care_pathway(dataframe, process_number) #### (dataframe is the raw data, process_number is the number of process you want to use)
-### linked = clean.pathway_link()
+## example:
+## ![图片](https://user-images.githubusercontent.com/68275662/111121829-1f3ca480-85a8-11eb-915f-8043f51206f0.png)
