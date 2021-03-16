@@ -232,12 +232,12 @@ class care_pathway(object):
 
     def reform_and_refill(self, dt):
         ###### 重组有初诊的复诊
-        first_level1 = dt[dt['初复诊'].values == "初"]
+        first_level1 = dt[dt['初/复诊'].values == "初"]
         print("初诊数据量为:{}".format(len(first_level1)))
         # 分好时间戳之后，我们可以将复诊再次细分
         # we have some laters' dt which do not have first HIS records, so we remove them for the accuracy of our analysis
 
-        data_laters = dt[dt["初复诊"].values == "复"]
+        data_laters = dt[dt["初/复诊"].values == "复"]
         print("复诊数据量为:{}".format(len(data_laters)))
 
         selected_id = []
@@ -272,10 +272,10 @@ class care_pathway(object):
         ###### 重组无初诊的复诊
         # 第一部分的初复诊已被分割、重组并填补治疗计划，接下来我们要将“无初诊的复诊数据”中的伪复诊重组为初诊，并且为他们的复诊填补治疗计划
         nofirst_laters = data_laters.append(df).drop_duplicates(keep=False)  # 筛选出没有初诊的复诊
-        nofirst_laters.loc[nofirst_laters['治疗计划'] != "Unknown", "初复诊"] = "初"  # 从没有初诊的复诊集中，找出自身就有具体治疗计划的伪复诊，并且换成初诊标签
+        nofirst_laters.loc[nofirst_laters['治疗计划'] != "Unknown", "初/复诊"] = "初"  # 从没有初诊的复诊集中，找出自身就有具体治疗计划的伪复诊，并且换成初诊标签
         # 最后，根据初复诊标签，将没有初诊的复诊总集分割成第二部分的初复诊子集
-        nofirst_first = nofirst_laters[nofirst_laters['初复诊'] == '初']
-        nofirst_laters = nofirst_laters[nofirst_laters['初复诊'] == '复']
+        nofirst_first = nofirst_laters[nofirst_laters['初/复诊'] == '初']
+        nofirst_laters = nofirst_laters[nofirst_laters['初/复诊'] == '复']
 
         find_real_candi0 = self.later_to_first(nofirst_first, nofirst_laters)
         nofirst_first = nofirst_first.append(find_real_candi0[0]).reset_index(drop=True)
@@ -336,41 +336,52 @@ class care_pathway(object):
         pats_id: 该数据集的所有患者id
         pats_data: 总数据集
         """
+        print("start split data")
         pats_data = self.df.copy()
-        pats_id = list(self.df[['关联键','证件号（id）']].value_counts().index)
+        pats_key = list(pats_data['关联键'].unique())
+        # pats_id = pats_data[pats_data['关联键'].isin(pats_key)]['证件号（id）'].tolist()
 
 
         sub_num = self.proc_num
-        size_list = [round(i) for i in np.linspace(0, len(pats_id) - 1, sub_num + 1)]
+        size_list = [round(i) for i in np.linspace(0, len(pats_key) - 1, sub_num + 1)]
         count = 1
         name = locals()
 
+
         for i in range(1, len(size_list)):  # 1,2,3,4
-
             if count == 1:
-                name["sub_pat{}".format(count)] = pats_id[size_list[i - 1]:size_list[i] + 1]
-                id_l = []
+                name["sub_pat{}".format(count)] = pats_key[size_list[i - 1]:size_list[i] + 1]
+                p_id = locals()["sub_pat{}".format(i)]
 
-                for x in locals()["sub_pat{}".format(i)]:
-                    idx = pats_data[(pats_data['关联键'].values == x[0])&(pats_data['证件号（id）'].values == x[1])].index.tolist()
-                    id_l += idx
-
-                #temp_sub = pats_data[pats_data['关联键'].isin([x[0] for x in locals()["sub_pat{}".format(i)]])]
-                name["sub_imp{}".format(count)] = pats_data.loc[id_l,:] # temp_sub[temp_sub['证件号（id）'].isin([x[1] for x in locals()["sub_pat{}".format(i)]])]
+                ### 1
+                # id_l = []
+                #
+                # for x in P_id:
+                #     idx = pats_data[(pats_data['关联键'].values == x[0])&(pats_data['证件号（id）'].values == x[1])].index.tolist()
+                #     id_l += idx
+                #
+                # name["sub_imp{}".format(count)] = pats_data.loc[id_l, :]
+                ### 2
+                temp_sub = pats_data[pats_data['关联键'].isin(p_id)]
+                name["sub_imp{}".format(count)] = temp_sub.copy()
 
             else:
-                name["sub_pat{}".format(count)] = pats_id[size_list[i - 1] + 1:size_list[i] + 1]
-                id_l = []
-
-                for x in locals()["sub_pat{}".format(i)]:
-                    idx = pats_data[(pats_data['关联键'].values == x[0]) & (pats_data['证件号（id）'].values == x[1])].index.tolist()
-                    id_l += idx
-
-                #temp_sub = pats_data[pats_data['关联键'].isin([x[0] for x in locals()["sub_pat{}".format(i)]])]
-                name["sub_imp{}".format(count)] = pats_data.loc[id_l,:] # temp_sub[temp_sub['证件号（id）'].isin([x[1] for x in locals()["sub_pat{}".format(i)]])]
-
+                name["sub_pat{}".format(count)] = pats_key[size_list[i - 1] + 1:size_list[i] + 1]
+                p_id = locals()["sub_pat{}".format(i)]
+                ### 1
+                # id_l = []
+                #
+                # for x in P_id:
+                #     idx = pats_data[(pats_data['关联键'].values == x[0]) & (pats_data['证件号（id）'].values == x[1])].index.tolist()
+                #     id_l += idx
+                #
+                # name["sub_imp{}".format(count)] = pats_data.loc[id_l, :]
+                ## 2
+                temp_sub = pats_data[pats_data['关联键'].isin(p_id)]
+                name["sub_imp{}".format(count)] = temp_sub.copy()
 
             count += 1
+
 
         # 分包后打包进元组方便遍历
         imp_list = []
