@@ -20,12 +20,31 @@ class care_pathway(object):
         """我们发现被重组到初诊中的‘伪复诊’可能与其之前的初诊记录拥有相同的“治疗计划” 、“诊断名称”成为了伪初诊，我们将它们筛选出来并重新放回复诊数据中，因为这部分数据很可能是医生复制了其初诊计划"""
         print("We have original first dataset in size {}, later dataset in size {}".format(len(ori_first),
                                                                                            len(add_later)))
+        # 某些“初诊”在初诊集合中有重合，我们将其取出作为复诊
+        check_key = ori_first[['关联键', '证件号（id）','诊断名称', '科室','治疗计划']].value_counts().index.tolist()
+        tolater = []
+        for i in check_key:
+            uni_cond = ori_first[(ori_first['关联键'].values == i[0])&(ori_first['证件号（id）'].values == i[1])&
+                                 (ori_first['诊断名称'].values == i[2])&(ori_first['科室'].values == i[3])&
+                                 (ori_first['治疗计划'].values == i[4])]
+
+            dates = uni_cond['date'].unique().tolist()
+            if len(dates) > 1:
+                to_later = uni_cond[uni_cond['date'].values != np.min(dates)].index.tolist()
+                tolater += to_later
+            else:
+                pass
+
+        to_keep = ori_first.loc[tolater,:]
+        ori_first.drop(tolater, inplace = True)
+
+
         id_l = set(add_later[['关联键', '证件号（id）', '诊断名称', '科室']].value_counts().index)
         idx_l = set(add_later.index)
         keep = set()
         rm = set()
         # 从需要加入的id_l中遍历原初诊数据集，查询其中是否有诊断名称、治疗计划相同的rows
-        list_idx = []
+        #list_idx = []
         for i in id_l:  # 遍历每一个组合key
             ori_sub = ori_first[(ori_first['关联键'].values == i[0]) & (ori_first['证件号（id）'].values == i[1]) & (
                     ori_first['诊断名称'].values == i[2]) & (ori_first['科室'].values == i[3])]
@@ -46,12 +65,14 @@ class care_pathway(object):
                 keepinlater = list(add_sub[add_sub['治疗计划'].values == 'Unknown'].index)
                 keep = keep | set(keepinlater)
 
-        print("Here are/is {} laters back to later set".format(len(keep)))
+
 
         idx_l = idx_l - keep - rm
         final_add = add_later.loc[idx_l, :]
         final_back = add_later.loc[keep - rm, :]
-        print(len(idx_l) + len(keep))
+        final_back = final_back.append(to_keep)
+
+        print("Here are/is {} laters back to later set".format(final_back.shape[0]))
         print("Here are/is {} rows' later data added to first".format(final_add.shape[0]))
 
         return final_add, final_back
