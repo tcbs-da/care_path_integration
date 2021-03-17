@@ -16,27 +16,30 @@ class care_pathway(object):
         self.proc_num = proc_num
 
 
+
     def later_to_first(self, ori_first, add_later):
         """我们发现被重组到初诊中的‘伪复诊’可能与其之前的初诊记录拥有相同的“治疗计划” 、“诊断名称”成为了伪初诊，我们将它们筛选出来并重新放回复诊数据中，因为这部分数据很可能是医生复制了其初诊计划"""
         print("We have original first dataset in size {}, later dataset in size {}".format(len(ori_first),
                                                                                            len(add_later)))
         # 某些“初诊”在初诊集合中有重合，我们将其取出作为复诊
-        check_key = ori_first[['关联键', '证件号（id）','诊断名称', '科室','治疗计划']].value_counts().index.tolist()
-        tolater = []
-        for i in check_key:
-            uni_cond = ori_first[(ori_first['关联键'].values == i[0])&(ori_first['证件号（id）'].values == i[1])&
-                                 (ori_first['诊断名称'].values == i[2])&(ori_first['科室'].values == i[3])&
-                                 (ori_first['治疗计划'].values == i[4])]
+        if ori_first.shape[0] != 0:
+            ori_dates = ori_first.groupby(['关联键', '证件号（id）','诊断名称', '科室','治疗计划'])['date'].unique().reset_index(drop = False)
+            ori_dates['selected'] = ori_dates['date'].apply(lambda x: 1 if len(x) > 1 else 0)
+            check_pat = ori_dates[ori_dates['selected'].values == 1].copy()
+            check_pat = check_pat[['关联键', '证件号（id）', '诊断名称', '科室', '治疗计划']].value_counts().index.tolist()
 
-            dates = uni_cond['date'].unique().tolist()
-            if len(dates) > 1:
+            tolater = []
+            for i in check_pat:
+                uni_cond = ori_first[(ori_first['关联键'].values == i[0]) & (ori_first['证件号（id）'].values == i[1]) &
+                                     (ori_first['诊断名称'].values == i[2]) & (ori_first['科室'].values == i[3]) &
+                                     (ori_first['治疗计划'].values == i[4])]
+
+                dates = uni_cond['date'].unique().tolist()
                 to_later = uni_cond[uni_cond['date'].values != np.min(dates)].index.tolist()
                 tolater += to_later
-            else:
-                pass
 
-        to_keep = ori_first.loc[tolater,:]
-        ori_first.drop(tolater, inplace = True)
+            to_keep = ori_first.loc[tolater,:]
+            ori_first.drop(tolater, inplace = True)
 
 
         id_l = set(add_later[['关联键', '证件号（id）', '诊断名称', '科室']].value_counts().index)
@@ -70,7 +73,10 @@ class care_pathway(object):
         idx_l = idx_l - keep - rm
         final_add = add_later.loc[idx_l, :]
         final_back = add_later.loc[keep - rm, :]
-        final_back = final_back.append(to_keep)
+        try:
+            final_back = final_back.append(to_keep)
+        except Exception as e:
+            print(e)
 
         print("Here are/is {} laters back to later set".format(final_back.shape[0]))
         print("Here are/is {} rows' later data added to first".format(final_add.shape[0]))
@@ -441,9 +447,14 @@ class care_pathway(object):
             final_out = final_out.append(i)
 
         # 添加性别、年龄信息
-        gender_set = self.df.groupby(['关联键', '证件号（id）'])['性别'].agg(self.find_gender)
+        add = self.df.copy()
+        add.rename(columns={'关联号': '关联键', "证件号": "证件号（id）", "初复诊": "初/复诊"}, inplace=True)
+        add = add[~(add['初/复诊'].values == '指定')]
+        add['初/复诊'] = add['初/复诊'].apply(lambda x: "初" if x == "初诊" else "复")
+
+        gender_set = add.groupby(['关联键', '证件号（id）'])['性别'].agg(self.find_gender)
         final_out = final_out.join(gender_set, how='left', on=['关联键', '证件号（id）'])
-        age_set = self.df.groupby(['关联键', '证件号（id）'])['年龄'].agg(self.find_age)
+        age_set = add.groupby(['关联键', '证件号（id）'])['年龄'].agg(self.find_age)
         final_out = final_out.join(age_set, how='left', on=['关联键', '证件号（id）'])
 
         return final_out
