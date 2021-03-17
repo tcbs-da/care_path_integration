@@ -318,6 +318,21 @@ class care_pathway(object):
 
         return data_first, data_laters
 
+    def find_age(self,x):
+        x = x.tolist()
+        age = np.max(x)
+        return age
+
+    def find_gender(self,x):
+        x = x.tolist()
+        male = x.count("男")
+        female = x.count("女")
+        if male > female:
+            return "男"
+        elif male < female:
+            return '女'
+        else:
+            return "Unknown"
 
     def group(self, data):
         return data.groupby(['关联键', '证件号（id）', '诊断名称', '治疗计划', '科室', 'date'])['消费项目'].unique().reset_index(
@@ -359,8 +374,15 @@ class care_pathway(object):
         """
         print("start split data")
         pats_data = self.df.copy()
+
+        # ph数据字段特殊，统一一下格式
+        pats_data.rename(columns={'关联号': '关联键', "证件号": "证件号（id）", "初复诊": "初/复诊"}, inplace=True)
+        pats_data = pats_data[~(pats_data['初/复诊'].values == '指定')]
+        pats_data['初/复诊'] = pats_data['初/复诊'].apply(lambda x: "初" if x == "初诊" else "复")
+
+
+        #####
         pats_key = list(pats_data['关联键'].unique())
-        # pats_id = pats_data[pats_data['关联键'].isin(pats_key)]['证件号（id）'].tolist()
 
 
         sub_num = self.proc_num
@@ -374,30 +396,13 @@ class care_pathway(object):
                 name["sub_pat{}".format(count)] = pats_key[size_list[i - 1]:size_list[i] + 1]
                 p_id = locals()["sub_pat{}".format(i)]
 
-                ### 1
-                # id_l = []
-                #
-                # for x in P_id:
-                #     idx = pats_data[(pats_data['关联键'].values == x[0])&(pats_data['证件号（id）'].values == x[1])].index.tolist()
-                #     id_l += idx
-                #
-                # name["sub_imp{}".format(count)] = pats_data.loc[id_l, :]
-                ### 2
                 temp_sub = pats_data[pats_data['关联键'].isin(p_id)]
                 name["sub_imp{}".format(count)] = temp_sub.copy()
 
             else:
                 name["sub_pat{}".format(count)] = pats_key[size_list[i - 1] + 1:size_list[i] + 1]
                 p_id = locals()["sub_pat{}".format(i)]
-                ### 1
-                # id_l = []
-                #
-                # for x in P_id:
-                #     idx = pats_data[(pats_data['关联键'].values == x[0]) & (pats_data['证件号（id）'].values == x[1])].index.tolist()
-                #     id_l += idx
-                #
-                # name["sub_imp{}".format(count)] = pats_data.loc[id_l, :]
-                ## 2
+
                 temp_sub = pats_data[pats_data['关联键'].isin(p_id)]
                 name["sub_imp{}".format(count)] = temp_sub.copy()
 
@@ -434,5 +439,11 @@ class care_pathway(object):
         final_out = pd.DataFrame()
         for i in sub_list:
             final_out = final_out.append(i)
+
+        # 添加性别、年龄信息
+        gender_set = self.df.groupby(['关联键', '证件号（id）'])['性别'].agg(self.find_gender)
+        final_out = final_out.join(gender_set, how='left', on=['关联键', '证件号（id）'])
+        age_set = self.df.groupby(['关联键', '证件号（id）'])['年龄'].agg(self.find_age)
+        final_out = final_out.join(age_set, how='left', on=['关联键', '证件号（id）'])
 
         return final_out
